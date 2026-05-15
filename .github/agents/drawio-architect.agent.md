@@ -1,7 +1,7 @@
 ---
 name: drawio-architect
 description: Turns user requirements into an initial Azure US Gov architecture diagram as a .drawio file. Uses the drawio skill and template.drawio to produce an editable, accreditation-boundary-aware diagram.
-tools: ['search/codebase', 'edit/editFiles', 'search/usages', 'execute/runInTerminal', 'execute/getTerminalOutput', 'web/fetch']
+tools: [execute/getTerminalOutput, execute/runInTerminal, read/viewImage, edit/editFiles, search/codebase, search/usages, web/fetch]
 ---
 
 # Draw.io Architect Agent
