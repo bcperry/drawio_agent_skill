@@ -76,13 +76,32 @@ Use these as the baseline unless the legend or user requirements define a differ
 - Bidirectional foreground data flow: `edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;startArrow=classic;startFill=1;endArrow=classic;endFill=1;labelBackgroundColor=none;`
 - Dashed/reference flow: `edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;dashed=1;dashPattern=8 8;endArrow=classic;endFill=1;labelBackgroundColor=none;`
 
+## Post-edit verification (MUST follow — non-negotiable)
+
+**Edit tools can silently fail.** A `multi_replace_string_in_file` call may report "successfully edited" while one or more individual replacements inside it actually failed (because draw.io re-saved the file and reordered attributes, normalized whitespace, or inserted small geometry deltas like `x="-0.0028"`). Trusting the success message alone has caused real bugs (subnets staying at template width and bleeding past the Azure boundary, edge label `<mxPoint>` offsets coming back empty after a re-save).
+
+**After every batch of geometry or style edits to a `.drawio` file, you MUST do BOTH of the following before claiming the change is done:**
+
+1. **Re-read the actual XML** for every cell you intended to change and confirm the new attribute values are present. Do not assume — open the file (or grep for the cell id and inspect the `mxGeometry` / `<mxPoint as="offset">` / style string).
+2. **Re-export the PNG and call `view_image` on it.** Compare the rendered output against your mental model of what the change should look like. If a container looks the same size as before, or a label is still on the line, the edit did not apply — go back and fix it.
+
+**Specific things you MUST verify after editing, by re-reading the XML:**
+- Container `mxGeometry` `width` / `height` / `x` / `y` actually match the new values you intended.
+- Edge `<mxGeometry relative="1" as="geometry">` blocks contain a non-empty child `<mxPoint ... as="offset" />` with the actual `x` or `y` you set (an `<mxPoint as="offset" />` with no coordinates is a defect — it means the offset was stripped).
+- Edge style strings contain the exact `exitDy` / `entryDy` / `*Perimeter=0` fragments you added.
+- Subnet/vNet/accreditation/region/Azure-boundary widths match what you computed in your layout plan.
+
+**If the verification step shows the file does NOT match your intended edit, treat the original edit as failed and reissue it with a different match string** (the most common cause of silent failure is that draw.io rewrote the attribute order or geometry expression between your reads). Do not move on to the next task until verification passes.
+
+Never tell the user "the change is applied" based solely on a tool success message. The only proofs that count are (a) the new XML in the file, and (b) the rendered PNG.
+
 ## How to create a diagram
 
 1. **Start from the template** — read `template.drawio` and use its structure as the base (for architecture diagrams). For non-infrastructure diagrams (flowcharts, sequence diagrams, etc.), skip this step.
 2. **Generate draw.io XML** in mxGraphModel format for the requested diagram
 3. **Write the XML** to a `.drawio` file in the current working directory using the available file-editing tool
 4. **Post-process edge routing** (optional): If `npx @drawio/postprocess` is already available, run it on the `.drawio` file to optimize edge routing (simplify waypoints, fix edge-vertex collisions, straighten approach angles). If it is not available, skip it without installing anything and do not treat that as a failure.
-5. **Visual review** — Export a temporary PNG using the draw.io CLI (see below) and inspect it to verify:
+5. **Visual review** — Export a temporary PNG using the draw.io CLI (see below), then **load the PNG with the `view_image` tool** so you can actually see the rendered diagram. Do not skip the `view_image` step or substitute it with opening the file in an external viewer — the agent itself must inspect the rendered output. Verify:
    - No overlapping labels or edges
    - Containers/tiers are properly sized (no excessive empty space)
    - Icons and shapes are legible and not crammed together
@@ -99,7 +118,9 @@ Use these as the baseline unless the legend or user requirements define a differ
    - All foreground data-flow connectors use the expected line weight for their class
    - All non-empty labels have transparent backgrounds (`labelBackgroundColor=none;`)
    - XML order keeps containers behind connectors, icons, and labels
-   - If issues are found, adjust positions/sizes in the XML and re-export until the layout is clean. Delete the temporary PNG when done.
+   - If issues are found, adjust positions/sizes in the XML, re-export, and `view_image` again. Repeat until the layout is clean, then delete the temporary review PNG.
+
+   **Naming the review PNG:** export to `<diagram-name>-review.png` (no `.drawio` infix) so it cannot be confused with a user-requested export (`<diagram-name>.drawio.png`). Always delete the review PNG once the diagram is finalized.
 6. **If the user requested an export format** (png, svg, pdf), locate the draw.io CLI (see below), export with `--embed-diagram`. Delete only intermediate `.drawio` files created solely for that export; never delete an existing user-owned `.drawio` source file. If the CLI is not found, keep the `.drawio` file and tell the user they can install the draw.io desktop app to enable export, or open the `.drawio` file directly
 7. **Open the result only when appropriate** — open the exported file if exported, or the `.drawio` file otherwise, unless the user says they already have it open or asks not to open it. If the open command fails, print the file path so the user can open it manually.
 
@@ -315,23 +336,25 @@ When multiple **labeled** edges connect to the same side of a target (or source)
 <mxCell edge="1" style="...;entryX=0.75;entryY=1;entryDx=0;entryDy=0" target="node1" value="Query" .../>
 ```
 
-## Edge label positioning
+## Edge label positioning (MUST follow)
 
-When labeled edges run parallel or near-parallel (even with distinct connection points), their text labels can still overlap. Use `mxPoint` offsets inside the edge's `mxGeometry` to nudge labels apart:
+**Every labeled edge MUST have a perpendicular `<mxPoint>` offset on its `mxGeometry` so the label does not sit on top of the connector line.** Without an offset, draw.io centers the label text directly on the line and the line renders through the text.
 
 ```xml
-<mxCell id="edge1" value="SQL Queries" edge="1" source="a" target="b" style="...">
+<mxCell id="edge1" value="Pipelines" edge="1" source="a" target="b" style="...">
   <mxGeometry relative="1" as="geometry">
-    <mxPoint x="0" y="15" as="offset" />
+    <mxPoint y="-12" as="offset" />
   </mxGeometry>
 </mxCell>
 ```
 
-**Guidelines:**
-- Use `y` offset to separate labels on horizontal edges (positive = down, negative = up)
-- Use `x` offset to separate labels on vertical edges (positive = right, negative = left)
-- Typical offset: 12–20px is enough to prevent overlap
-- Check during visual review (step 5) — if labels still overlap after connection point distribution, add offsets
+**Required offsets:**
+- Horizontal edges: `<mxPoint y="-12" as="offset" />` (label above) or `y="12"` (label below). MUST be at least ±10.
+- Vertical edges: `<mxPoint x="-12" as="offset" />` (label left) or `x="12"` (label right). MUST be at least ±10.
+- Multi-word or long labels: use ±15 to ±20.
+- When multiple labeled edges run parallel and close together, alternate offsets (e.g. one at `y="-15"`, the next at `y="15"`) so labels do not stack.
+
+A `mxGeometry` written as `<mxGeometry relative="1" as="geometry" />` (self-closing, no child `mxPoint`) is a defect on any labeled edge — fix it before handoff.
 
 ## Edge and icon collision avoidance
 
@@ -344,6 +367,40 @@ Orthogonal edges route in straight horizontal/vertical segments. Before placing 
 2. Place icons that are NOT directly connected in separate rows/columns from the edge paths between connected icons
 3. After visual review, if an edge crosses through an unrelated icon, move that icon to a different row/column or reroute the edge using different exit/entry points
 4. When multiple edges share the same horizontal or vertical band, stagger their routing with different exit/entry Y (or X) values
+
+## Connector endpoint clearance from Azure icon labels (MUST follow)
+
+Azure 2 SVG icons render their `value` text BELOW the icon (`verticalLabelPosition=bottom`). The cell's bounding box only covers the icon graphic — it does NOT include the label text. Any connector that exits the bottom of an icon (or enters the top of an icon from below) WILL route through the label text unless the endpoint is explicitly pushed past it.
+
+**Required style fragments on the edge:**
+
+- Bottom exit, past label:
+  `exitX=0.5;exitY=1;exitDx=0;exitDy=30;exitPerimeter=0;`
+- Top entry from below, past label of source icon above:
+  `entryX=0.5;entryY=0;entryDx=0;entryDy=-30;entryPerimeter=0;`
+- Top exit (icon with label rendered above): `exitDy=-30;exitPerimeter=0;`
+- Bottom entry from above: `entryDy=30;entryPerimeter=0;`
+
+**Push values:**
+- Single-line label (e.g. "Azure SQL", "Storage"): use `dy=30`.
+- Two-line label (e.g. "Azure Synapse / Analytics", "Application Insights"): use `dy=35` to `dy=40`.
+- Always pair with `*Perimeter=0` so draw.io respects the absolute offset instead of snapping back to the icon perimeter.
+
+If the visual review shows a connector arrow crossing through any icon's label text, the fix is to add/raise these `*Dy` values — do not move the icon as a workaround.
+
+## Container sizing and whitespace (MUST follow)
+
+Containers (subnets, vNet, accreditation boundary, region label, Azure boundary) are NOT fixed at template size. They MUST be resized to fit their actual contents every time icons are added or removed.
+
+**Rules:**
+1. After every add/remove of an icon inside any container, recompute that container's geometry so visible content fits with **20–30 px padding** on all four sides. No more than ~30% of the container area may be empty whitespace.
+2. A container holding a single icon MUST be sized to roughly `iconWidth + 80 px` wide and `iconHeight + label + 50 px` tall — do not leave it at the original template width.
+3. Resize cascades **outward**: subnet → vNet → accreditation boundary → region label → Azure boundary. After shrinking an inner container, immediately shrink each outer container that wrapped it.
+4. Side panels (System Description, Common Services, Other Services, Legend) MUST sit no more than ~50 px to the right of the Azure boundary's right edge. After shrinking the Azure boundary, shift every panel cell (and any legend `sourcePoint`/`targetPoint` x-coordinate) left by the same delta to maintain that gap.
+5. Shared-services icon rows along the bottom of the Azure boundary MUST use **at least 80 px column spacing** so multi-word labels ("Azure DevOps", "Application Insights", "Microsoft Entra ID", "Azure Log Analytics") do not collide. 60 px spacing is too tight.
+6. Before placing an icon inside a container, verify that the icon's full visual extent (icon width × icon height + ~25 px label height below) fits inside the container with the required padding. If it does not, either move the icon or grow the container before saving.
+
+These rules are validated visually in step 5 (PNG export + `view_image`). Empty right-half whitespace inside any container is a defect.
 
 ## Troubleshooting
 
