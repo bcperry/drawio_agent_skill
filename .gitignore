@@ -1,0 +1,8 @@
+*.bkp
+*.drawio
+!template.drawio
+
+*.png
+
+# Generated Terraform stack — produced by terraform-builder agent
+infra/
