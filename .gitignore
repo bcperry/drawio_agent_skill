@@ -6,3 +6,6 @@
 
 # Generated Terraform stack — produced by terraform-builder agent
 infra/
+*.pdf
+*.txt
+*.drawio.dtmp

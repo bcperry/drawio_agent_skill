@@ -51,12 +51,15 @@ Prioritize clean, professional-looking layouts:
 - **Minimize line lengths** — place connected services adjacent to each other. If service A retrieves secrets from Key Vault, put Key Vault directly above or beside A, not across the diagram
 - **Prefer straight lines** — align connected services on the same row (horizontal edges) or same column (vertical edges) so edges are simple straight shots
 - **Do not add unnecessary jogs** — if two connected elements can be aligned, move the element or anchor point so the connector is a single straight segment. Only add waypoints/jogs when needed to avoid labels, icons, or boundary collisions.
+- **Draw fewer arrows by default** — show the primary ingress, egress, and cross-boundary/private-endpoint flows. Do not draw every internal dependency hop if the same relationship is already clear from grouping, labels, or the System Description/Key Components panels. Dense internal arrows are usually the slowest path to a failed visual review.
+- **Use panels for narrative detail** — put non-essential sequence detail, operational notes, and recipient lists in the side panels instead of forcing long connectors through the workload. A readable architecture diagram is more valuable than a complete call graph.
 - **Use consistent connector weights** — equivalent flow lines should use the same `strokeWidth`. Normal foreground data-flow connectors should use `strokeWidth=2`; use dashed or lighter styles only when the legend defines a different meaning. Do not mix default, 1px, and 2px weights for the same class of connector.
 - **Use rounded orthogonal connectors consistently** — normal diagram connectors should use `edgeStyle=orthogonalEdgeStyle` with `rounded=1`. Do not mix rounded and square connector corners in the same diagram unless the legend defines a specific meaning.
 - **Avoid routing edges through icons/symbology** — if an edge would cross a service icon, logo, or symbol, rearrange or reroute the layout instead. Foreground lines still must not obscure foreground icons
 - **Do not place icons inline on connector paths** — connector lines should terminate at an icon edge, not visually run through a symbol as if the icon is sitting on top of the line. Move the icon off the path or connect from the side.
 - **Think about the actual architecture** before placing elements — don't add components, subnets, or connections that don't exist in the real system
 - **External/shared services** (Entra ID, Azure Monitor, etc.) should be placed outside the accreditation boundary without connection arrows — they are shown for context, not as part of the data flow
+- **Preserve required scaffold elements** — when starting from `template.drawio`, preserve the user/Internet/NIPRNet ingress context, IAP, Army Enterprise Services, cArmy VDSS, Azure/accreditation/vNet boundaries, side panels, and the legend unless the user explicitly asks. Move or resize scaffold elements when needed; do not remove them to make room. Do not create or preserve a BCAP label/container by default.
 - **No label backgrounds** — every non-empty `value` cell must include `labelBackgroundColor=none;` in its style (vertices, edges, containers, text labels, edge labels — everything). The default white rectangle behind label text looks ugly and clutters the diagram
 - **Z-order matters** — in draw.io XML, elements later in the file render on top. Always keep backgrounds and containers behind foreground elements. Use this ordering: outer/page backgrounds → region/boundary containers → vNets/subnets/grouping boxes → side panels → connector edges → service icons/logos → free text/annotations. Subnets, boundaries, and grouping boxes must never render on top of icons or lines.
 - **Avoid coincident edges everywhere** — never align container, boundary, connector, text box, or icon/logo edges exactly or nearly on top of each other. Region, accreditation, vNet, subnet boxes, labels, and logos should have intentional visible separation on all sides so humans can distinguish each element at a glance.
@@ -67,6 +70,21 @@ Prioritize clean, professional-looking layouts:
 - **One-way arrows use `endArrow` toward the target** — for single-direction flow, model the source/target in the intended flow direction and use `endArrow=classic`. Do not use `startArrow` unless the arrow is intentionally pointing back toward the source.
 
 **Do NOT** redesign the boundary structure, side panel layout, or legend format — these follow the cArmy standard.
+
+### cArmy / VDSS layout defaults
+
+For Azure cArmy architecture diagrams that start from `template.drawio`, use this spatial pattern unless the user explicitly asks for a different layout:
+
+- Keep the user/Internet/NIPRNet / IAP / Army Enterprise Services / cArmy VDSS scaffold as the left-side ingress context outside the Azure boundary. Do not add a BCAP label/container by default; BCAP sits between users and VDSS conceptually but should not be drawn unless the user explicitly asks for it.
+- Place the ECMA logo/label immediately above the Azure boundary title area, visually tied to the Azure environment boundary. Do not move ECMA into the left ingress stack or leave it stranded elsewhere on the page.
+- Place external notification recipients outside the Azure boundary on the far left, aligned with the enterprise/VDSS context, when they are authorities or consumers outside the workload. Do not push recipient boxes to the far right if that creates long outbound fan-out lines or detaches them from the operational context.
+- Place monitored Microsoft signal sources as a bottom band below the Azure boundary, centered under the main Azure workload. Do not use a top strip if it makes the diagram read like the signals are part of the Azure boundary or forces long vertical ingress routes.
+- Keep explicit short VDSS-to-APIM ingress/egress paths when APIM is the boundary interface. The lines should show the connection without drawing every internal hop.
+
+### Common service logo defaults
+
+- Use real Azure/service logos for common services whenever they are already available in the diagram stencil/library. In particular, Azure DevOps should use `img/lib/azure2/devops/Azure_DevOps.svg`, and Defender for Cloud should be shown as the Defender logo/icon already present in the template/diagram.
+- Do not create duplicate text-only badges for services that already have a real logo in the common-services row. Text badges are acceptable for services without an available logo or for intentionally non-Azure services such as ServiceNow.
 
 ### Default connector styles
 
@@ -90,6 +108,9 @@ Use these as the baseline unless the legend or user requirements define a differ
 - Edge `<mxGeometry relative="1" as="geometry">` blocks contain a non-empty child `<mxPoint ... as="offset" />` with the actual `x` or `y` you set (an `<mxPoint as="offset" />` with no coordinates is a defect — it means the offset was stripped).
 - Edge style strings contain the exact `exitDy` / `entryDy` / `*Perimeter=0` fragments you added.
 - Subnet/vNet/accreditation/region/Azure-boundary widths match what you computed in your layout plan.
+- No duplicate `mxCell id` values were introduced. If a patch tool reports a healed/corrected edit, re-read the affected lines immediately; it may have inserted replacement cells without removing the originals.
+
+**Keep manual XML patches small.** Patch one concern at a time (for example, boundary geometry, then edge routes, then label styles). Avoid giant mixed patches that touch embedded image data URI cells or many repeated connector fragments; they are harder to verify and more likely to produce duplicate or stale XML.
 
 **If the verification step shows the file does NOT match your intended edit, treat the original edit as failed and reissue it with a different match string** (the most common cause of silent failure is that draw.io rewrote the attribute order or geometry expression between your reads). Do not move on to the next task until verification passes.
 
@@ -100,8 +121,21 @@ Never tell the user "the change is applied" based solely on a tool success messa
 1. **Start from the template** — read `template.drawio` and use its structure as the base (for architecture diagrams). For non-infrastructure diagrams (flowcharts, sequence diagrams, etc.), skip this step.
 2. **Generate draw.io XML** in mxGraphModel format for the requested diagram
 3. **Write the XML** to a `.drawio` file in the current working directory using the available file-editing tool
-4. **Post-process edge routing** (optional): If `npx @drawio/postprocess` is already available, run it on the `.drawio` file to optimize edge routing (simplify waypoints, fix edge-vertex collisions, straighten approach angles). If it is not available, skip it without installing anything and do not treat that as a failure.
-5. **Visual review** — Export a temporary PNG using the draw.io CLI (see below), then **load the PNG with the `view_image` tool** so you can actually see the rendered diagram. Do not skip the `view_image` step or substitute it with opening the file in an external viewer — the agent itself must inspect the rendered output. Verify:
+4. **Pre-flight before first screenshot** — run the bundled validator and fix deterministic XML/style issues before involving visual reviewers. In particular, fix missing `labelBackgroundColor=none;`, duplicate ids, broken image references, missing template scaffold, and obvious container sizing errors early.
+5. **Post-process edge routing** (optional): If `npx @drawio/postprocess` is already available, run it on the `.drawio` file to optimize edge routing (simplify waypoints, fix edge-vertex collisions, straighten approach angles). If it is not available, skip it without installing anything and do not treat that as a failure.
+6. **Visual review — ITERATIVE SUBAGENT LOOP, MANDATORY** — Export a temporary PNG using the draw.io CLI (see below), then **load the PNG with the `view_image` tool** so you can actually see the rendered diagram. Do not skip the `view_image` step or substitute it with opening the file in an external viewer — the agent itself must inspect the rendered output. **You MUST repeat the export → `view_image` → subagent review → fix loop until the diagram is actually clean and every reviewer is satisfied.** A single screenshot is not sufficient — every time you make any edit that could affect layout, edges, labels, container sizing, or icon position, you MUST re-export and re-view before reporting progress to the user. Do not tell the user the diagram is "done", "clean", "ready", "good", or hand off to a downstream agent based on tool exit codes, validator success, or your own assumptions — only after a `view_image` call has shown you a layout you can defend against every checklist item below **and all available review subagents return `PASS`**. If the user comes back and points out a defect that was visible in the rendered PNG, that is a process failure: you skipped or rushed the visual review.
+
+  **Required reviewer loop:** If the `agent`/subagent tool is available, run all four review subagents against the freshly exported review PNG on every visual-review iteration:
+  - `drawio-boundary-reviewer` for Azure/accreditation/vNet/subnet/panel/container placement
+  - `drawio-edge-reviewer` for connector routing, crossings, arrowheads, endpoint clearance, and flow-label placement
+  - `drawio-label-reviewer` for overlapping, clipped, cramped, illegible, or misleading labels
+  - `drawio-content-reviewer` for required template content, broken/missing icons, logo regressions, and required services
+
+  Treat any subagent response other than `PASS` as a failed review item. Do not overrule a subagent finding casually; either fix it, or explicitly verify from the PNG that it is a false positive and record why in the final summary. After fixing any finding, re-export the PNG, call `view_image` again, and re-run the full subagent set. Only exit the loop when your own visual review passes and every available reviewer returns `PASS`. If the subagent tool is unavailable, say so in the handoff and perform the checklist manually, but never pretend subagent review happened.
+
+  **Efficient fix order:** first restore content/scaffold issues, then fix deterministic XML/style validation issues, then remove or simplify unnecessary connectors, then resize boundaries/side panels, then tune labels. If edge/label reviewers repeatedly flag the same busy area, prefer deleting optional connectors or moving detail into panels over adding more waypoints.
+
+  When iterating, after each fix call `view_image` again on the freshly re-exported PNG and explicitly re-check the items you just changed plus the full checklist; only exit the loop when no checklist item fails. Verify:
    - No overlapping labels or edges
    - Containers/tiers are properly sized (no excessive empty space)
    - Icons and shapes are legible and not crammed together
@@ -116,13 +150,13 @@ Never tell the user "the change is applied" based solely on a tool success messa
    - External/shared services are outside the accreditation boundary and do not have connection arrows
    - Azure services use official Azure icons
    - All foreground data-flow connectors use the expected line weight for their class
-   - All non-empty labels have transparent backgrounds (`labelBackgroundColor=none;`)
+    - Labels use transparent backgrounds (`labelBackgroundColor=none;`) unless a white label background is explicitly needed to keep an edge label readable over a connector or boundary line
    - XML order keeps containers behind connectors, icons, and labels
    - If issues are found, adjust positions/sizes in the XML, re-export, and `view_image` again. Repeat until the layout is clean, then delete the temporary review PNG.
 
    **Naming the review PNG:** export to `<diagram-name>-review.png` (no `.drawio` infix) so it cannot be confused with a user-requested export (`<diagram-name>.drawio.png`). Always delete the review PNG once the diagram is finalized.
-6. **If the user requested an export format** (png, svg, pdf), locate the draw.io CLI (see below), export with `--embed-diagram`. Delete only intermediate `.drawio` files created solely for that export; never delete an existing user-owned `.drawio` source file. If the CLI is not found, keep the `.drawio` file and tell the user they can install the draw.io desktop app to enable export, or open the `.drawio` file directly
-7. **Open the result only when appropriate** — open the exported file if exported, or the `.drawio` file otherwise, unless the user says they already have it open or asks not to open it. If the open command fails, print the file path so the user can open it manually.
+7. **If the user requested an export format** (png, svg, pdf), locate the draw.io CLI (see below), export with `--embed-diagram`. Delete only intermediate `.drawio` files created solely for that export; never delete an existing user-owned `.drawio` source file. If the CLI is not found, keep the `.drawio` file and tell the user they can install the draw.io desktop app to enable export, or open the `.drawio` file directly
+8. **Open the result only when appropriate** — open the exported file if exported, or the `.drawio` file otherwise, unless the user says they already have it open or asks not to open it. If the open command fails, print the file path so the user can open it manually.
 
 ### Hard validation checks
 
@@ -399,8 +433,9 @@ Containers (subnets, vNet, accreditation boundary, region label, Azure boundary)
 4. Side panels (System Description, Common Services, Other Services, Legend) MUST sit no more than ~50 px to the right of the Azure boundary's right edge. After shrinking the Azure boundary, shift every panel cell (and any legend `sourcePoint`/`targetPoint` x-coordinate) left by the same delta to maintain that gap.
 5. Shared-services icon rows along the bottom of the Azure boundary MUST use **at least 80 px column spacing** so multi-word labels ("Azure DevOps", "Application Insights", "Microsoft Entra ID", "Azure Log Analytics") do not collide. 60 px spacing is too tight.
 6. Before placing an icon inside a container, verify that the icon's full visual extent (icon width × icon height + ~25 px label height below) fits inside the container with the required padding. If it does not, either move the icon or grow the container before saving.
+7. Intentional Azure-only shared-service bands may use more vertical room than workload containers, but they must remain visually clear, outside the accreditation boundary, and non-overlapping. Do not shrink the Azure boundary so tightly that shared service labels sit on the boundary line.
 
-These rules are validated visually in step 5 (PNG export + `view_image`). Empty right-half whitespace inside any container is a defect.
+These rules are validated visually in step 6 (PNG export + `view_image`). Empty right-half whitespace inside any container is a defect.
 
 ## Troubleshooting
 
